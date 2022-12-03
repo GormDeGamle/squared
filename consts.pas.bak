@@ -1,0 +1,253 @@
+unit consts;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils, sdl, sdltypes, sdltools;
+
+//******************************************************************************
+//*** constants and types for the Dr. Fuchshuber game
+//******************************************************************************
+
+const
+  //*** screen size
+  ScreenWidth  = 800;
+  ScreenHeight = 480;
+
+  //*** game states
+  ST_GAME      = 1;
+  ST_RESTART   = 2;
+  ST_GAMEOVER  = 3;
+  ST_MENU      = 4;
+
+  //*** the name of the game (C4A)
+
+  {$IFDEF WINDOWS}
+  cDefaultFont   = '.\data\DejaVuSans.ttf';
+  cTileFont      = '.\data\CarbonType.ttf';
+  cScoreFont     = '.\data\CarbonType.ttf';
+  cScoreListFont = '.\data\CarbonType.ttf';
+  cTitleFont     = '.\data\CarbonType.ttf';
+  cCfgFile       = '.\squared.cfg';
+  {$ELSE}
+  cDefaultFont   = './data/DejaVuSans.ttf';
+  cTileFont      = './data/CarbonType.ttf';
+  cScoreFont     = './data/CarbonType.ttf';
+  cScoreListFont = './data/CarbonType.ttf';
+  cTitleFont     = './data/CarbonType.ttf';
+  cCfgFile       = './squared.cfg';
+  {$ENDIF}
+
+  KeyBufferSize = 10;
+
+  MinTile = 1;
+  MaxTile = 16;
+
+  TemplateWidth = 128;
+  TemplateLargeFontSize = 96;
+  TemplateMediumFontSize = 80;
+  TemplateSmallFontSize = 54;
+  TemplateSmallestFontSize = 42;
+  TemplateTinyFontSize = 32;
+
+  TinyTileWidth = 32;
+  TinyBorderWidth = 4;
+
+  DefaultFontSize   = 18;
+  TitleFontSize     = 78;
+  ScoreFontSize     = 38;
+  ScoreListFontSize = 14;
+
+  TitleSpeed = 1200;
+
+  DefaultSlideSpeed = 1600;
+  DefaultPopUpSpeed = 4;
+  DefaultFlipSpeed  = 6;
+
+  QuickPopUpSpeed = 12;
+  QuickFlipSpeed  = 18;
+
+  GameOverFlipSpeed = 3;
+  GameOverSlideSpeed = 300;
+  GameOverWaitTime = 500;
+
+  ShowHintTime = 1000;
+
+type
+  TDirection = (dirNone, dirUp, dirDown, dirLeft, dirRight);
+
+  TMoving = (mvNone, mvHere, mvOut, mvIn, mvAway);
+
+  TSlideDirection = (sldVertical, sldHorizontal);
+
+  TSquaredOptions = record
+    //*** colors
+    ScreenColor: TRGBAColor;
+    FontColor: TSDL_Color;
+    GridColor: TRGBAColor;
+    FieldColor: TRGBAColor;
+    ScoreColor: TRGBAColor;
+    ScoreFontColor: TSDL_Color;
+    TitleFontColor: TSDL_Color;
+    TileColor: array[MinTile..MaxTile] of TRGBAColor;
+    TileFontColor: array[MinTile..MaxTile] of TSDL_Color;
+    //*** board
+    BoardSize: integer;
+    BorderWidth: integer;
+    BoardWidth: integer;
+    TileWidth: integer;
+    //*** animations
+    DoAnimate: boolean;
+    DoPopup: boolean;
+    DoSlide: boolean;
+    DoMelt: boolean;
+    PopUpSpeed: single;
+    SlideSpeed: single;
+    //*** C4A
+    DoC4A: boolean;
+    C4A_ShortName: string;
+  end;
+
+  ESquaredError = class(Exception);
+
+// helper functions
+function DoAnimatePopup: boolean;
+function DoAnimateSlide: boolean;
+function DoAnimateMelt: boolean;
+// calculate values
+function GetBorderWidth: integer;
+function GetBoardWidth(aBoardSize, aTileWidth, aBorderWidth: integer): integer;
+function GetTileWidth(aBoardSize, aBorderWidth: integer): integer;
+
+var
+  DefaultOptions: TSquaredOptions; // "factory" settings
+  Options : TSquaredOptions;       // current options
+
+implementation
+
+procedure SetDefaults;
+begin
+  //*** set the default options
+  with DefaultOptions do begin
+    ScreenColor    := gcWhite;
+    FontColor      := scBlack;
+    GridColor      := gcDkGray;
+    FieldColor     := gcLtGray;
+    ScoreColor     := gcLtGray;
+    ScoreFontColor := scWhite;
+    TitleFontColor := scLtGray;
+
+    TileColor[1]  := MakeRGBA($FF, $FF, $FF, $FF);
+    TileColor[2]  := MakeRGBA($FF, $DF, $DF, $FF);
+    TileColor[3]  := MakeRGBA($FF, $B8, $B8, $FF);
+    TileColor[4]  := MakeRGBA($FF, $9F, $9F, $FF);
+    TileColor[5]  := MakeRGBA($FF, $7F, $7F, $FF);
+    TileColor[6]  := MakeRGBA($FF, $00, $00, $FF);
+    TileColor[7]  := MakeRGBA($CF, $FF, $CF, $FF);
+    TileColor[8]  := MakeRGBA($9F, $FF, $9F, $FF);
+    TileColor[9]  := MakeRGBA($2F, $FF, $2F, $FF);
+    TileColor[10] := MakeRGBA($BF, $FF, $00, $FF);
+    TileColor[11] := MakeRGBA($FF, $FF, $00, $FF);
+    TileColor[12] := MakeRGBA($E0, $E0, $30, $FF);
+    TileColor[13] := MakeRGBA($A0, $A0, $30, $FF);
+    TileColor[14] := MakeRGBA($80, $80, $C0, $FF);
+    TileColor[15] := MakeRGBA($50, $50, $E0, $FF);
+    TileColor[16] := MakeRGBA($00, $00, $FF, $FF);
+
+    TileFontColor[1]  := scBlack;
+    TileFontColor[2]  := scBlack;
+    TileFontColor[3]  := scBlack;
+    TileFontColor[4]  := scWhite;
+    TileFontColor[5]  := scWhite;
+    TileFontColor[6]  := scWhite;
+    TileFontColor[7]  := scBlack;
+    TileFontColor[8]  := scBlack;
+    TileFontColor[9]  := scWhite;
+    TileFontColor[10] := scBlack;
+    TileFontColor[11] := scBlack;
+    TileFontColor[12] := scBlack;
+    TileFontColor[13] := scWhite;
+    TileFontColor[14] := scWhite;
+    TileFontColor[15] := scWhite;
+    TileFontColor[16] := scWhite;
+
+    BoardSize   := 4;
+
+    BorderWidth := GetBorderWidth;
+    TileWidth   := GetTileWidth(BoardSize, BorderWidth);
+    BoardWidth  := GetBoardWidth(BoardSize, TileWidth, BorderWidth);
+
+    DoC4A     := FALSE;
+    DoAnimate := TRUE;
+    DoPopup   := TRUE;
+    DoSlide   := TRUE;
+    DoMelt    := TRUE;
+
+    PopUpSpeed  := DefaultPopUpSpeed;
+    SlideSpeed  := DefaultSlideSpeed;
+
+    C4A_ShortName := '';
+  end;
+
+  Options := DefaultOptions;
+end;
+
+//------------------------------------------------------------------------------
+
+function DoAnimatePopup: boolean;
+begin
+  Result := Options.DoAnimate and Options.DoPopup;
+end;
+
+function DoAnimateSlide: boolean;
+begin
+  Result := Options.DoAnimate and Options.DoSlide;
+end;
+
+function DoAnimateMelt: boolean;
+begin
+  Result := Options.DoAnimate and Options.DoMelt;
+end;
+
+//------------------------------------------------------------------------------
+
+function GetBorderWidth: integer;
+var
+  aScreenSize: integer;
+begin
+  if ScreenWidth > ScreenHeight then
+    aScreenSize := ScreenHeight
+  else
+    aScreenSize := ScreenWidth
+  ;
+
+  Result := aScreenSize div 60;
+end;
+
+function GetTileWidth(aBoardSize, aBorderWidth: integer): integer;
+var
+  aScreenSize: integer;
+begin
+  //**** calculate the tile size
+  if ScreenWidth > ScreenHeight then
+    aScreenSize := ScreenHeight
+  else
+    aScreenSize := ScreenWidth
+  ;
+
+  Result := (aScreenSize - (aBoardSize + 1) * aBorderWidth) div (aBoardSize + 1);//*** leave some space above/under the board
+end;
+
+function GetBoardWidth(aBoardSize, aTileWidth, aBorderWidth: integer): integer;
+begin
+  Result := (aBoardSize * aTileWidth) + ((aBoardSize + 1) * aBorderWidth);
+end;
+
+initialization
+
+  SetDefaults;
+
+end.
+

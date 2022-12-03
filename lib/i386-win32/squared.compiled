@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <Compiler Value="F:\lazarus\fpc\3.2.0\bin\i386-win32\fpc.exe" Date="1357350198"/>
+  <Params Value=" -MObjFPC -Scghi -O1 -g -l -vewnhibq -FiF:\Dev\Lazarus\projects\squared\lib\i386-win32 -FuF:\Dev\Lazarus\lib\sdl -FuF:\Dev\Lazarus\projects\squared\ -FUF:\Dev\Lazarus\projects\squared\lib\i386-win32\ -FEF:\Dev\Lazarus\projects\squared\bin\ -oF:\Dev\Lazarus\projects\squared\bin\squared.exe squared.lpr"/>
+</CONFIG>

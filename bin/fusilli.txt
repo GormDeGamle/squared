@@ -1,0 +1,47 @@
+Fusilli client Version 1.2.0.2
+Built for Windows PC
+Usage: fusilli [OPTIONS] ACTION [ACTION OPTIONS]
+These actions may be:
+       fusilli [OPTIONS] push GAMENAME SCORE [TIMEOUT]
+       * submits the score SCORE for the game GAMENAME using the optional
+         timeout TIMEOUT (in ms). The default timeout is 10000 ms.
+       * OPTIONS may be either --test-me or --cache. In the first case a score
+         is only submitted if the score isn't uploaded at c4a yet for the player
+         With --cache the score is written to a file if the submit failed
+         (e.g. because of a missing network connection). It will be tried
+         to be resend the next time a score is submitted with fusilli.
+       fusilli emptycache [TIMEOUT]
+       * submits the cached scores (if available) using the optional
+         timeout TIMEOUT (in ms). The default timeout is 10000 ms.
+       fusilli [OPTIONS] pull GAMENAME [TIMEOUT]
+       * gets all scores of the game GAMENAME using the optional
+         timeout TIMEOUT (in ms). The default timeout is 10000 ms.
+       * OPTIONS may be --test-me, --filtered, --MMYYYY, --thismonth or --ranks.
+         With --test-me a score is only shown if it is from the owner of the
+         profile. With --filtered for every player only the best scores is
+         shown. With --MMYYYY you can add a month of a year to show like
+         --102014 for the scores of october 2014. Use --thismonth for the
+         score of the recent month. If you add --rankes the ranks are shown
+         Every result then has 5 instead of 4 entries.
+       * Except for using with --test-me no profile file is needed.
+       * Every score persists of 4 or 5 lines: (Rank,) Player name, short player
+         name, score and commit unix timestamp. So the output will be a multiple
+         of four or five lines long, e.g.
+         Evil Dragon
+         EVD
+         1337
+         1377323529
+         Ziz
+         ZIZ
+         667
+         1410088968
+       fusilli info ABOUT
+       * prints informations about the profile of the player
+       * ABOUT may be longname, shortname, password, email, prid, cache or all.
+         For "all" all informations are printed linewise in the named order.
+Return values:
+       *  0 if everything went fine
+       * -1 (255) at submission error. This is even -1 if the submission failed,
+         but was cached and if no submission was done on purpose because of
+         --test-me.
+       * -2 (254) if no profile file is found, but needed

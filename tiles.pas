@@ -1,0 +1,964 @@
+unit tiles;
+
+{$mode objfpc}{$H+}
+
+interface
+
+uses
+  Classes, SysUtils, sdl, sdlclasses, sdltools, sdltypes, sdlfonts, consts;
+
+type
+
+  //****************************************************************************
+  //*** Tiles and animations
+  //****************************************************************************
+
+  TSquaredTile = class;
+
+  { TSquaredAnimation }
+
+  TSquaredAnimation = class
+  private
+    FTile: TSquaredTile;
+    FIsTerminated: boolean;
+    FVelocity: single;
+    FLastUpdate: integer;
+    FPos: TVector2DInt;
+    FPosFloat: TVector2DFloat;
+  protected
+    function GetX: integer; virtual;
+    procedure SetX(aX: integer); virtual;
+    function GetY: integer; virtual;
+    procedure SetY(aY: integer); virtual;
+    procedure SetPos(aPos: TVector2DInt); virtual;
+    function GetXFloat: single; virtual;
+    procedure SetXFloat(aX: single); virtual;
+    function GetYFloat: single; virtual;
+    procedure SetYFloat(aY: single); virtual;
+    procedure SetPosFloat(aPos: TVector2DFloat); virtual;
+    property LastUpdate: integer read FLastUpdate;                              //<- time of last update (in ticks = ms)
+  public
+    constructor Create(aTile: TSquaredTile);
+    destructor Destroy; override;
+
+    procedure Update; virtual;
+    procedure Animate; virtual; abstract;
+    procedure RenderTo(aSurface: TSDLSurface); virtual;
+    procedure RenderTo(aX, aY: integer; aSurface: TSDLSurface); virtual;
+
+    property Tile: TSquaredTile read FTile;
+    property x: integer read GetX write SetX;
+    property y: integer read GetY write SetY;
+    property Pos: TVector2DInt read FPos write SetPos;
+    property XFloat: single read GetXFloat write SetXFloat;
+    property YFloat: single read GetYFloat write SetYFloat;
+    property PosFloat: TVector2DFloat read FPosFloat write SetPosFloat;
+    property isTerminated: boolean read FIsTerminated;
+    property Velocity: single read FVelocity write FVelocity;
+  end;
+
+  { TPopUpAnimation }
+
+  TPopUpAnimation = class(TSquaredAnimation)
+  private
+    FOrgZoom: double;
+    FOrgSize: integer;
+    FPhase: integer;
+    FSizeLimit: array[0..2] of integer;
+    function GetSizeLimit(aPhase: integer): integer;
+  protected
+    property OrgZoom: double read FOrgZoom;
+    property Phase: integer read FPhase;
+    property SizeLimit[aPhase: integer]: integer read GetSizeLimit;
+  public
+    constructor Create(aTile: TSquaredTile; aSpeed: integer);
+
+    procedure Update; override;
+    procedure Animate; override;
+
+    property OrgSize: integer read FOrgSize;
+  end;
+
+  { TSlideAnimation }
+
+  TSlideAnimation = class(TSquaredAnimation)
+  private
+    FFromField: integer;
+    FToField: integer;
+    FToPos: integer;
+    FDirection: TSlideDirection;
+    FLastMove: integer;
+    FDirFactor: integer;
+    FIsFinished: boolean;
+  protected
+    procedure SetToField(aValue: integer); virtual;
+
+    property LastMove: integer read FLastMove;                                  //<- time of last move (in ticks = ms)
+    property DirFactor: integer read FDirFactor;                                //<- positive or negative movement?
+  public
+    constructor Create(aTile: TSquaredTile; aFromField, aToField: integer; aDirection: TSlideDirection);
+
+    procedure Update; override;
+    procedure Animate; override;
+
+    property FromField: integer read FFromField;
+    property ToField: integer read FToField write SetToField;
+    property ToPos: integer read FToPos;
+    property Direction: TSlideDirection read FDirection;
+    property isTerminated: boolean read FIsTerminated write FIsTerminated;
+    property isFinished: boolean read FIsFinished;
+  end;
+
+  { TFlipAnimation }
+
+  TFlipAnimation = class(TSquaredAnimation)
+  private
+    FOrgSize: integer;
+    FToTile: TSquaredTile;
+    FTempTile: TSquaredTile;
+    FPhase: integer;
+  protected
+    function GetDirection: TZoomDirection; virtual;
+    procedure SetPhase(aValue: integer); virtual;
+    property Phase: integer read FPhase write SetPhase;
+  public
+    constructor Create(aFromTile, aToTile: TSquaredTile; aDirection: TZoomDirection; aSpeed: integer);
+    destructor Destroy; override;
+
+    procedure Update; override;
+    procedure Animate; override;
+    procedure RenderTo(aX, aY: integer; aSurface: TSDLSurface); override;
+
+    property FromTile: TSquaredTile read FTile;
+    property ToTile: TSquaredTile read FToTile;
+    property TempTile: TSquaredTile read FTempTile;
+    property OrgSize: integer read FOrgSize;
+    property Direction: TZoomDirection read GetDirection;
+  end;
+
+  { TGameOverAnimation }
+
+  TGameOverAnimations = class;
+
+  TGameOverAnimation = class(TFlipAnimation)
+  private
+    FOwner: TGameOverAnimations;
+    FIndex: integer;
+    FOrgPos: TVector2DInt;
+    FJumpVelocity: single;
+    FJumpHeight: integer;
+    FWaitTime: integer;
+    FWaitStart: integer;
+    FPause: boolean;
+  protected
+    procedure SetPhase(aValue: integer); override;
+    function GetPrevAnimation: TGameOverAnimation;
+    function GetNextAnimation: TGameOverAnimation;
+
+    property OrgPos: TVector2DInt read FOrgPos;
+    property JumpHeight: integer read FJumpHeight;
+    property WaitTime: integer read FWaitTime;
+    property WaitStart: integer read FWaitStart;
+  public
+    constructor Create(aOwner: TGameOverAnimations; aIndex: integer; aFromTile, aToTile: TSquaredTile);
+
+    procedure Update; override;
+    procedure Animate; override;
+
+    property Owner: TGameOverAnimations read FOwner;
+    property Index: integer read FIndex;
+    property JumpVelocity: single read FJumpVelocity write FJumpVelocity;
+    property PrevAnimation: TGameOverAnimation read GetPrevAnimation;
+    property NextAnimation: TGameOverAnimation read GetNextAnimation;
+    property Pause: boolean read FPause write FPause;
+  end;
+
+  { TGameOverAnimations }
+
+  TGameOverAnimations = class
+  private
+    FBoard: TObject;
+    FGameOverTile: array[0..7] of TSquaredTile;
+    FAnimation: array [0..7] of TGameOverAnimation;
+
+  protected
+    function GetIsRunning: boolean;
+    function GetBoardIndex(aIndex: integer): integer;
+  public
+    constructor Create(aBoard: TObject);
+
+    procedure Start;
+    procedure Stop;
+    procedure CreateAnimations;
+    procedure DestroyAnimations;
+    procedure CreateTiles;
+    procedure DestroyTiles;
+
+    property BoardIndex[aIndex: integer]: integer read GetBoardIndex;
+    property isRunning: boolean read GetIsRunning;
+  end;
+
+  { TSquaredTile }
+
+  TSquaredTile = class(TSDLGfxSurface)
+  private
+    FTileWidth: integer;
+  protected
+    property TileWidth: integer read FTileWidth;
+  public
+    constructor Create; overload;
+    constructor Create(aTileWidth: integer); overload;
+
+    procedure Update; override;
+  end;
+
+implementation
+
+uses
+  resources, board;
+
+//******************************************************************************
+// TSquaredAnimation
+//******************************************************************************
+
+constructor TSquaredAnimation.Create(aTile: TSquaredTile);
+var
+  aSaveZoom: single;
+begin
+  inherited Create;
+
+  FTile := TSquaredTile.Create;
+
+  aSaveZoom := aTile.Zoom;
+  try
+    aTile.Zoom := 1;
+    aTile.Update;
+    ApplySurface(0, 0, aTile.Surface, FTile.Surface);
+    FTile.Update;
+  finally
+    aTile.Zoom := aSaveZoom;
+    aTile.Update;
+  end;
+
+  FIsTerminated := FALSE;
+
+  FPos := NullVector2DInt;
+  FPosFloat := NullVector2DFloat;
+
+  FVelocity := 0;
+  FLastUpdate := SDL_GetTicks;
+end;
+
+destructor TSquaredAnimation.Destroy;
+begin
+  FTile.Free;
+
+  inherited;
+end;
+
+//------------------------------------------------------------------------------
+
+function TSquaredAnimation.GetX: integer;
+begin
+  Result := FPos.x;
+end;
+
+procedure TSquaredAnimation.SetX(aX: integer);
+begin
+  FPos.x := aX;
+  FPosFloat.x := aX;
+end;
+
+function TSquaredAnimation.GetY: integer;
+begin
+  Result := FPos.y;
+end;
+
+procedure TSquaredAnimation.SetY(aY: integer);
+begin
+  FPos.y := aY;
+  FPosFloat.y := aY;
+end;
+
+procedure TSquaredAnimation.SetPos(aPos: TVector2DInt);
+begin
+  FPos := aPos;
+
+  FPosFloat.x := aPos.x;
+  FPosFloat.y := aPos.y;
+end;
+
+function TSquaredAnimation.GetXFloat: single;
+begin
+  Result := FPosFloat.x;
+end;
+
+procedure TSquaredAnimation.SetXFloat(aX: single);
+begin
+  FPosFloat.x := aX;
+  FPos.x := round(aX);
+end;
+
+function TSquaredAnimation.GetYFloat: single;
+begin
+  Result := FPosFloat.y;
+end;
+
+procedure TSquaredAnimation.SetYFloat(aY: single);
+begin
+  FPosFloat.y := aY;
+  FPos.y := round(aY);
+end;
+
+procedure TSquaredAnimation.SetPosFloat(aPos: TVector2DFloat);
+begin
+  FPosFloat := aPos;
+  FPos.x := round(aPos.x);
+  FPos.y := round(aPos.y);
+end;
+
+//------------------------------------------------------------------------------
+// draw animated tile
+//------------------------------------------------------------------------------
+
+procedure TSquaredAnimation.Update;
+begin
+  Animate;
+  FLastUpdate := SDL_GetTicks;
+end;
+
+procedure TSquaredAnimation.RenderTo(aSurface: TSDLSurface);
+begin
+  RenderTo(0, 0, aSurface);
+end;
+
+procedure TSquaredAnimation.RenderTo(aX, aY: integer; aSurface: TSDLSurface);
+begin
+  Tile.RenderTo(aX + X, aY + Y, aSurface);
+end;
+
+//******************************************************************************
+// TPopupAnimation
+//******************************************************************************
+
+constructor TPopUpAnimation.Create(aTile: TSquaredTile; aSpeed: integer);
+begin
+  inherited Create(aTile);
+
+  FOrgZoom := FTile.Zoom;
+  FOrgSize := Options.TileWidth;
+  FSizeLimit[0] := Options.TileWidth;
+  FSizeLimit[1] := Options.TileWidth + 2 * Options.BorderWidth;
+  FSizeLimit[2] := Options.TileWidth;
+
+  FTile.Zoom := 0;
+  FVelocity := aSpeed;
+  FPhase := 0;
+end;
+
+function TPopUpAnimation.GetSizeLimit(aPhase: integer): integer;
+begin
+  Result := FSizeLimit[aPhase];
+end;
+
+procedure TPopUpAnimation.Update;
+begin
+  inherited;
+
+  case Phase of
+    0:
+      begin
+        if Tile.Width >= SizeLimit[0] then begin
+          FPhase := 1;
+          Velocity := Velocity * 0.5;
+        end;
+      end;
+    1:
+      begin
+        if Tile.Width >= SizeLimit[1] then begin
+          FPhase := 2;
+          Velocity := Velocity * 0.5;
+        end;
+      end;
+    2:
+      begin
+        if Tile.Width <= SizeLimit[2] then begin
+          FIsTerminated := TRUE;
+        end;
+      end;
+  end;
+end;
+
+procedure TPopUpAnimation.Animate;
+var
+  aTicks: integer;
+  aDelta: integer;
+begin
+  aTicks := SDL_GetTicks;
+  aDelta := aTicks - FLastUpdate;
+  case Phase of
+    0, 1:
+      begin
+        Tile.Zoom := Tile.Zoom + Velocity  * (aDelta / 1000);
+      end;
+    2:
+      begin
+        Tile.Zoom := Tile.Zoom - Velocity  * (aDelta / 1000);
+      end;
+  end;
+  Tile.Update;
+
+  X := (OrgSize - Tile.Width) div 2;
+  Y := X;
+end;
+
+//******************************************************************************
+// TSlideAnimation
+//******************************************************************************
+
+constructor TSlideAnimation.Create(aTile: TSquaredTile; aFromField, aToField: integer; aDirection: TSlideDirection);
+begin
+  inherited Create(aTile);
+
+  FToPos      := 0;
+  FDirFactor  := 0;
+  FDirection  := aDirection;
+  FIsFinished := FALSE;
+
+  FFromField   := aFromField;
+  ToField      := aToField;
+
+  FVelocity  := Options.SlideSpeed;
+  FLastMove  := SDL_GetTicks;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TSlideAnimation.SetToField(aValue: integer);
+begin
+  FToField := aValue;
+  FToPos := (FToField - FFromField) * (Options.TileWidth + Options.BorderWidth);
+  if FToPos < 0 then
+    FDirFactor := -1
+  else if FToPos > 0 then
+    FDirFactor := 1
+  else
+    FDirFactor := 0
+  ;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TSlideAnimation.Update;
+begin
+  inherited;
+
+  if ToPos = 0 then begin
+    FIsFinished := TRUE;
+  end
+  else begin
+    case Direction of
+      sldHorizontal:
+        begin
+          if ToPos < 0 then
+            if X <= ToPos then FIsFinished := TRUE
+          ;
+          if ToPos > 0 then
+            if X >= ToPos then FIsFinished := TRUE
+          ;
+          if FIsFinished then
+            X := toPos
+          ;
+        end;
+    sldVertical:
+      begin
+        if ToPos < 0 then
+          if Y <= ToPos then FIsFinished := TRUE
+        ;
+        if ToPos > 0 then
+          if Y >= ToPos then FIsFinished := TRUE
+        ;
+        if FIsFinished then
+          Y := toPos
+        ;
+      end;
+    end;
+  end;
+end;
+
+procedure TSlideAnimation.Animate;
+var
+  aTicks: integer;
+  aDelta: integer;
+begin
+  aTicks := SDL_GetTicks;
+  aDelta := aTicks - FLastMove;
+
+  if not isFinished then begin
+    case Direction of
+      sldHorizontal:
+        XFloat := XFloat + Velocity * (aDelta / 1000) * DirFactor;
+      sldVertical:
+        YFloat := YFloat + Velocity * (aDelta / 1000) * DirFactor;
+    end;
+  end;
+
+  FLastMove := aTicks;
+end;
+
+//******************************************************************************
+// TFlipAnimation
+//******************************************************************************
+
+constructor TFlipAnimation.Create(aFromTile, aToTile: TSquaredTile; aDirection: TZoomDirection; aSpeed: integer);
+var
+  aSaveZoom: single;
+begin
+  inherited Create(aFromTile);
+
+  FToTile := TSquaredTile.Create;
+
+  aSaveZoom := aToTile.Zoom;
+  try
+    aToTile.Zoom := 1;
+    aToTile.Update;
+    ApplySurface(0, 0, aToTile.Surface, FToTile.Surface);
+    FToTile.Update;
+  finally
+    aToTile.Zoom := aSaveZoom;
+    aToTile.Update;
+  end;
+
+  FPhase := -1;
+
+  FOrgSize := Options.TileWidth;
+  FVelocity := aSpeed;
+
+  FTempTile := TSquaredTile.Create(FOrgSize);
+  TempTile.ZoomDirection := aDirection;
+  TempTile.Zoom := 1;
+
+  Phase := 0;
+end;
+
+destructor TFlipAnimation.Destroy;
+begin
+  FTempTile.Free;
+  FToTile.Free;
+
+  inherited;
+end;
+
+//------------------------------------------------------------------------------
+
+function TFlipAnimation.GetDirection: TZoomDirection;
+begin
+  if TempTile <> nil then
+    Result := TempTile.ZoomDirection
+  else
+    Result := zdBoth
+  ;
+end;
+
+procedure TFlipAnimation.SetPhase(aValue: integer);
+var
+  aSave: single;
+begin
+  if aValue <> FPhase then begin
+    FPhase := aValue;
+    aSave := TempTile.Zoom;
+    TempTile.Zoom := 1;
+    TempTile.Update;
+    case FPhase of
+      0: FromTile.RenderTo(TempTile);
+      1: ToTile.RenderTo(TempTile);
+    end;
+    TempTile.Zoom := aSave;
+    TempTile.Update;
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TFlipAnimation.Update;
+begin
+  inherited;
+
+  case Phase of
+    0:
+      if TempTile.Zoom  <= 0 then begin
+        TempTile.Zoom := 0;
+        Phase := 1;
+      end;
+    1:
+      if TempTile.Zoom >= 1 then begin
+        TempTile.Zoom := 1;
+        FIsTerminated := TRUE;
+      end;
+  end;
+end;
+
+procedure TFlipAnimation.Animate;
+var
+  aTicks: integer;
+  aDelta: integer;
+begin
+  aTicks := SDL_GetTicks;
+  aDelta := aTicks - FLastUpdate;
+  case Phase of
+    0:
+      begin
+        TempTile.Zoom := TempTile.Zoom - Velocity * (aDelta / 1000);
+      end;
+    1:
+      begin
+        TempTile.Zoom := TempTile.Zoom + Velocity * (aDelta / 1000);
+      end;
+  end;
+
+  TempTile.Update;
+  case Direction of
+    zdX:
+      begin
+        X := (OrgSize - TempTile.Width) div 2;
+      end;
+    zdY:
+      begin
+        Y := (OrgSize - TempTile.Height) div 2;
+      end;
+    zdBoth:
+      begin
+        X := (OrgSize - TempTile.Width) div 2;
+        Y := (OrgSize - TempTile.Height) div 2;
+      end;
+  end;
+end;
+
+procedure TFlipAnimation.RenderTo(aX, aY: integer; aSurface: TSDLSurface);
+begin
+  TempTile.RenderTo(aX + X, aY + Y, aSurface);
+end;
+
+//******************************************************************************
+// TGameOverAnimation
+//******************************************************************************
+
+constructor TGameOverAnimation.Create(aOwner: TGameOverAnimations; aIndex: integer; aFromTile, aToTile: TSquaredTile);
+begin
+  inherited Create(aFromTile, aToTile, zdX, GameOverFlipSpeed);
+
+  FOwner := aOwner;
+  FIndex := aIndex;
+  FOrgPos := NullVector2DInt;
+  FJumpVelocity := GameOverSlideSpeed;
+  FJumpHeight := Options.TileWidth div 2;
+  FWaitTime := GameOverWaitTime;
+  FWaitStart := 0;
+  FPause := FALSE;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TGameOverAnimation.SetPhase(aValue: integer);
+var
+  aSave: single;
+begin
+  if aValue <> FPhase then begin
+    FPhase := aValue;
+    aSave := TempTile.Zoom;
+    TempTile.Zoom := 1;
+    TempTile.Update;
+    case FPhase of
+      0, 5: FromTile.RenderTo(TempTile);
+      1, 4: ToTile.RenderTo(TempTile);
+    end;
+    TempTile.Zoom := aSave;
+    TempTile.Update;
+
+    //timing
+    case FPhase of
+      0: Pause := TRUE;
+      1: NextAnimation.Pause := FALSE;
+      2: Pause := TRUE;
+      3: NextAnimation.Pause := FALSE;
+      4: Pause := TRUE;
+      5: NextAnimation.Pause := FALSE;
+    end;
+  end;
+end;
+
+function TGameOverAnimation.GetPrevAnimation: TGameOverAnimation;
+begin
+  if Index = Low(Owner.FAnimation) then
+    Result := Owner.FAnimation[High(Owner.FAnimation)]
+  else
+    Result := Owner.FAnimation[Index - 1]
+  ;
+end;
+
+function TGameOverAnimation.GetNextAnimation: TGameOverAnimation;
+begin
+  if Index = High(Owner.FAnimation) then
+    Result := Owner.FAnimation[Low(Owner.FAnimation)]
+  else
+    Result := Owner.FAnimation[Index + 1]
+  ;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TGameOverAnimation.Update;
+begin
+  Animate;
+  FLastUpdate := SDL_GetTicks;;
+
+  //if not Pause then begin
+    case Phase of
+      // turn
+      0:
+        if TempTile.Zoom  <= 0 then begin
+          TempTile.Zoom := 0;
+          Phase := 1;
+        end;
+      1:
+        if TempTile.Zoom >= 1 then begin
+          TempTile.Zoom := 1;
+          Phase := 2;
+        end;
+      // jump
+      2:
+        if y <= (OrgPos.y - JumpHeight) then begin
+          y := OrgPos.y - JumpHeight;
+          Phase := 3;
+        end;
+      3:
+        if y >= (OrgPos.y) then begin
+          y := OrgPos.y;
+          Phase := 4;
+        end;
+      //turn back
+      4:
+        if TempTile.Zoom  <= 0 then begin
+          TempTile.Zoom := 0;
+          Phase := 5;
+        end;
+      5:
+        if TempTile.Zoom >= 1 then begin
+          TempTile.Zoom := 1;
+          Phase := 0;
+        end;
+    end;
+  //end;
+end;
+
+procedure TGameOverAnimation.Animate;
+var
+  aTicks: integer;
+  aDelta: integer;
+begin
+  if not Pause then begin
+    aTicks := SDL_GetTicks;
+    aDelta := aTicks - FLastUpdate;
+
+    case Phase of
+      0, 4:
+        begin
+          TempTile.Zoom := TempTile.Zoom - Velocity * (aDelta / 1000);
+        end;
+      1, 5:
+        begin
+          TempTile.Zoom := TempTile.Zoom + Velocity * (aDelta / 1000);
+        end;
+      2:
+        begin
+          YFloat := YFloat - JumpVelocity * (aDelta / 1000);
+        end;
+      3:
+        begin
+          YFloat := YFloat + JumpVelocity * (aDelta / 1000);
+        end;
+    end;
+
+    TempTile.Update;
+    case Direction of
+      zdX:
+        begin
+          X := (OrgSize - TempTile.Width) div 2;
+        end;
+      zdY:
+        begin
+          Y := (OrgSize - TempTile.Height) div 2;
+        end;
+      zdBoth:
+        begin
+          X := (OrgSize - TempTile.Width) div 2;
+          Y := (OrgSize - TempTile.Height) div 2;
+        end;
+    end;
+  end;
+end;
+
+//******************************************************************************
+// TGameOverAnimation
+//******************************************************************************
+
+constructor TGameOverAnimations.Create(aBoard: TObject);
+var
+  ii: integer;
+begin
+  inherited Create;
+  if not (aBoard is TSquaredBoard) then
+    raise ESquaredError.Create('''aBoard'' must be of type TSquaredBoard');
+  FBoard := aBoard;
+
+  for ii := Low(FAnimation) to High(FAnimation) do begin
+    FAnimation[ii] := nil;
+  end;
+
+end;
+
+//------------------------------------------------------------------------------
+
+function TGameOverAnimations.GetBoardIndex(aIndex: integer): integer;
+begin
+  if aIndex < 4 then
+    Result := aIndex
+  else
+    Result := aIndex + 8
+  ;
+end;
+
+function TGameOverAnimations.GetIsRunning: boolean;
+begin
+  Result := FAnimation[0] <> nil;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TGameOverAnimations.Start;
+begin
+  if isRunning then Stop;
+
+  CreateTiles;
+  CreateAnimations;
+
+  FAnimation[0].Pause := FALSE;
+end;
+
+procedure TGameOverAnimations.Stop;
+begin
+  DestroyAnimations;
+  DestroyTiles;
+end;
+
+procedure TGameOverAnimations.CreateAnimations;
+var
+  ii: integer;
+begin
+  for ii := Low(FAnimation) to High(FAnimation) do begin
+    with FBoard as TSquaredBoard do begin
+      FAnimation[ii] := TGameOverAnimation.Create(
+        Self,
+        ii,
+        Tile[Data[BoardIndex[ii]]],
+        FGameOverTile[ii]
+      );
+      FAnimation[ii].Pause := TRUE;
+      Animations[BoardIndex[ii]] := FAnimation[ii];
+    end;
+  end;
+end;
+
+procedure TGameOverAnimations.DestroyAnimations;
+var
+  ii: integer;
+begin
+  for ii := Low(FAnimation) to High(FAnimation) do begin
+    if FAnimation[ii] <> nil then begin
+      with FBoard as TSquaredBoard do begin
+        Animations[BoardIndex[ii]] := nil; // this frees the corresponding object!
+      end;
+      FAnimation[ii] := nil;
+    end;
+  end;
+end;
+
+procedure TGameOverAnimations.CreateTiles;
+var
+  ii, aX, aY: integer;
+  aFont: TSDLFont;
+begin
+  //*** init tiles
+  aFont := TSDLFont.Create;
+  try
+    for ii := 0 to 7 do begin
+      FGameOverTile[ii] := TSquaredTile.Create;
+      with FBoard as TSquaredBoard do begin
+        FGameOverTile[ii].BackgroundColor := Options.TileColor[Data[BoardIndex[ii]]];
+
+        aFont.Size := TemplateLargeFontSize;
+        aFont.Load(cTileFont);
+        aX := 36;
+        ay := 12;
+
+        aFont.Color := Options.TileFontColor[Data[BoardIndex[ii]]];
+        aFont.Rendertype := frtBlended;
+
+        FGameOverTile[ii].Clear;
+        FGameOverTile[ii].WriteText(aX, aY, Copy('Gameover', ii + 1, 1), aFont);
+
+        FGameOverTile[ii].Update;
+      end;
+    end;
+  finally
+    aFont.Free;
+  end;
+end;
+
+procedure TGameOverAnimations.DestroyTiles;
+var
+  ii: integer;
+begin
+  for ii := 0 to 7 do begin
+    if FGameOverTile[ii] <> nil then begin
+      FreeAndNil(FGameOverTile[ii]);
+    end;
+  end;
+end;
+
+//******************************************************************************
+// TSquaredTile
+//******************************************************************************
+
+constructor TSquaredTile.Create;
+begin
+  Create(TemplateWidth);
+end;
+
+constructor TSquaredTile.Create(aTileWidth: integer);
+begin
+  inherited Create;
+
+  Surface := SDL_CreateRGBSurface(
+    0,
+    aTileWidth,
+    aTileWidth,
+    Screen.Surface^.format^.BitsPerPixel,
+    Screen.Surface^.format^.RMask,
+    Screen.Surface^.format^.GMask,
+    Screen.Surface^.format^.BMask,
+    Screen.Surface^.format^.AMask
+  );
+
+  FTileWidth := Options.TileWidth;
+
+  Zoom := TileWidth / TemplateWidth;
+end;
+
+procedure TSquaredTile.Update;
+begin
+  inherited Update;
+end;
+
+end.
+

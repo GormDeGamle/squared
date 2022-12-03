@@ -1,0 +1,33 @@
+Fusilli client Version 1.1.0.0
+Built for Personal Computer
+Usage: fc [OPTIONS] ACTION [ACTION OPTIONS]
+These actions may be:
+       fc [OPTIONS] push GAMENAME SCORE [TIMEOUT]
+       * submits the score SCORE for the game GAMENAME using the optional
+         timeout TIMEOUT (in ms). The default timeout is 10000 ms.
+       * OPTIONS may be --test-me or --cache. In the first case a score is only
+         submitted if the score isn't uploaded at c4a yet for the player.
+         With --cache the score is written to a file if the submit failed
+         (e.g. because of a missing network connection). It will be tried
+         to be resend the next time a score is submitted with fc.
+       fc [OPTIONS] pull GAMENAME [TIMEOUT]
+       * gets all scores of the game GAMENAME using the optional
+         timeout TIMEOUT (in ms). The default timeout is 10000 ms.
+       * OPTIONS may only be --test-me atm. In that case a score is only
+         shown if it is from the owner of the profile.
+       * Except for using with --test-me no profile file is needed.
+       * Every score persists of four lines: Player name, short player name,
+         score and commit unix timestamp. So the output will be a multiple of
+         four lines long, e.g.
+         Evil Dragon
+         EVD
+         1337
+         1377323529
+         Ziz
+         ZIZ
+         667
+         1410088968
+       fc info ABOUT
+       * prints informations about the profile of the player
+       * ABOUT may be longname, shortname, password, email, prid or all.
+         For "all" all informations are printed linewise in the named order.
